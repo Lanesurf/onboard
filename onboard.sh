@@ -163,13 +163,76 @@ cd "$wt" && exec "$SHELL" -l
 LSF
 chmod +x "$HOME/.local/bin/lsf"
 
+# handoff — push your work AND your Claude Code session(s) for this worktree.
+cat > "$HOME/.local/bin/handoff" <<'HANDOFF'
+#!/usr/bin/env bash
+# handoff — from inside your worktree: commit + push the branch, and bundle
+# this worktree's Claude Code session transcript(s) so Sarthak can RESUME the
+# actual conversation (not just the code) via `takeover <you>`.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "run me inside your worktree" >&2; exit 1; }
+branch="$(git -C "$root" branch --show-current)"
+[ -n "$branch" ] || { echo "detached HEAD — checkout your user/<you> branch" >&2; exit 1; }
+proj="$HOME/.claude/projects/$(printf '%s' "$root" | sed 's#/#-#g')"   # Claude's per-cwd transcript dir
+mkdir -p "$root/.handoff/claude"
+n=0
+if [ -d "$proj" ]; then
+  for f in "$proj"/*.jsonl; do [ -e "$f" ] || continue; cp "$f" "$root/.handoff/claude/"; n=$((n+1)); done
+fi
+printf '%s\n' "$root" > "$root/.handoff/origin_cwd"   # so takeover can re-home paths
+git -C "$root" add -A
+git -C "$root" commit -q -m "handoff: work + ${n} claude session(s)" || echo "(nothing new to commit)"
+git -C "$root" push -u origin "$branch"
+slug="${branch#user/}"; repo="$(basename "$root")"; repo="${repo%-$slug}"
+echo "✅ handed off '$branch' with ${n} Claude session(s)."
+echo "   Sarthak runs:  takeover ${slug} ${repo}"
+HANDOFF
+chmod +x "$HOME/.local/bin/handoff"
+
+# takeover — receive a teammate's branch AND resume their Claude Code session.
+cat > "$HOME/.local/bin/takeover" <<'TAKEOVER'
+#!/usr/bin/env bash
+# takeover <slug> [repo] — fetch a teammate's user/<slug> branch into a worktree,
+# re-home their handed-off Claude transcript into your project dir, and resume it.
+set -euo pipefail
+slug="${1:?usage: takeover <slug> [repo]}"; repo="${2:-}"
+WS="$HOME/lanesurf"; branch="user/$slug"
+# shellcheck disable=SC1091
+[ -f "$WS/.onboard-session" ] && . "$WS/.onboard-session" || true
+if [ -z "$repo" ]; then
+  for r in ${REPOS:-}; do
+    git -C "$WS/$r" fetch -q origin 2>/dev/null || true
+    if git -C "$WS/$r" show-ref --verify --quiet "refs/remotes/origin/$branch"; then repo="$r"; break; fi
+  done
+fi
+[ -n "$repo" ] || { echo "branch $branch not found on origin — pass the repo: takeover $slug <repo>" >&2; exit 1; }
+root="$WS/$repo"; git -C "$root" fetch -q origin
+wt="$WS/$repo-$slug"
+[ -d "$wt" ] || git -C "$root" worktree add "$wt" "$branch" 2>/dev/null || git -C "$root" worktree add "$wt" "origin/$branch"
+proj="$HOME/.claude/projects/$(printf '%s' "$wt" | sed 's#/#-#g')"; mkdir -p "$proj"
+origin="$(cat "$wt/.handoff/origin_cwd" 2>/dev/null || true)"
+last_id=""
+if ls "$wt/.handoff/claude/"*.jsonl >/dev/null 2>&1; then
+  for f in "$wt/.handoff/claude/"*.jsonl; do
+    dest="$proj/$(basename "$f")"
+    if [ -n "$origin" ]; then sed "s#$origin#$wt#g" "$f" > "$dest"; else cp "$f" "$dest"; fi
+  done
+  last_id="$(basename "$(ls -t "$wt/.handoff/claude/"*.jsonl | head -1)" .jsonl)"
+fi
+cd "$wt"
+if [ -n "$last_id" ]; then echo "→ resuming Claude session $last_id"; exec claude --resume "$last_id"
+else echo "→ no Claude session in handoff; starting fresh"; exec claude; fi
+TAKEOVER
+chmod +x "$HOME/.local/bin/takeover"
+
 # ───────────────────────── done ────────────────────────────────────────────
 say "✅ all set."
 say "workspace : $WORKSPACE"
-say "your branch: $BRANCH   (push it; Sarthak checks it out to take over)"
+say "your branch: $BRANCH"
 say ""
-say "next:   lsf lanesurf-backend-go      # makes your worktree for that repo"
-say "then:   claude                       # your own Claude Code, in the worktree"
+say "next:     lsf lanesurf-backend-go    # make your worktree for that repo"
+say "then:     claude                     # your own Claude Code, in the worktree"
+say "handoff:  handoff                    # push your work + Claude session to Sarthak"
 say ""
 cd "$WORKSPACE"
 exec "$SHELL" -l

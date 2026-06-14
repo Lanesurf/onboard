@@ -7,7 +7,7 @@ their branch off to Sarthak.
 ## Run it
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Lanesurf/onboard/v1/onboard.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Lanesurf/onboard/v2/onboard.sh)
 ```
 
 > Use `bash <(curl ...)`, **not** `curl ... | bash` — the script needs your
@@ -16,7 +16,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Lanesurf/onboard/v1/onboard.
 Verify the script before running (optional but encouraged):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Lanesurf/onboard/v1/onboard.sh | shasum -a 256
+curl -fsSL https://raw.githubusercontent.com/Lanesurf/onboard/v2/onboard.sh | shasum -a 256
 # compare against the sha256 Sarthak posted in Slack
 ```
 
@@ -33,11 +33,26 @@ curl -fsSL https://raw.githubusercontent.com/Lanesurf/onboard/v1/onboard.sh | sh
 ## Working + handoff
 
 ```bash
-lsf lanesurf-backend-go        # creates ~/lanesurf/lanesurf-backend-go-<you> on branch user/<you>
-claude                         # your own Claude Code, in that worktree
-# …work, commit…
-git push -u origin user/<you>  # hand off — Sarthak checks out your branch
+lsf lanesurf-backend-go    # creates ~/lanesurf/lanesurf-backend-go-<you> on branch user/<you>
+claude                     # your own Claude Code, in that worktree
+# …work…
+handoff                    # commit + push your branch AND bundle your Claude session(s)
 ```
+
+`handoff` (run from inside your worktree) prints the exact takeover command.
+
+**Sarthak takes over — work *and* the live Claude conversation:**
+
+```bash
+takeover <you> [repo]      # fetch the branch into a worktree, re-home the Claude
+                           # transcript into your project dir, and `claude --resume` it
+```
+
+How the session carries over: `handoff` copies this worktree's Claude transcripts
+(`~/.claude/projects/<cwd>/*.jsonl`) into `.handoff/claude/` on your branch.
+`takeover` rewrites the paths to your machine and resumes the newest session, so
+you continue the conversation where they left off — not just the code.
+
 
 ## Maintenance (Sarthak)
 
